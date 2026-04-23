@@ -1,3 +1,28 @@
+Skip to content
+kamilkopyra
+pitch_detection_using_Mc_Leod_Method
+Repository navigation
+Code
+Issues
+Pull requests
+Agents
+Actions
+Projects
+Wiki
+Security and quality
+Insights
+Settings
+Comparing changes
+Choose two branches to see what’s changed or to start a new pull request. If you need to, you can also  or learn more about diff comparisons.
+...
+There isn’t anything to compare.
+main and master are entirely different commit histories.
+
+ Showing  with 0 additions and 364 deletions.
+ 364 changes: 0 additions & 364 deletions364  
+caly/Tuner_Main.cpp
+Original file line number	Diff line number	Diff line change
+@@ -1,364 +0,0 @@
 #include <stdio.h>
 #include <string> 
 #include <vector>
@@ -7,14 +32,13 @@
 #include <fstream>
 #include <iomanip>
 #include <stdlib.h>
-//#include "matplotlibcpp.h" 
+
 
 #define pi 3.14159265358979323846
 using namespace std;
 
 const int windowSize = 4096;
 const int sampleRate = 44100;
-float meanFreq = 0;
 float previousFreq = 0;
 float secondFreq = 0;
 float df = (float)sampleRate / (float)windowSize;
@@ -33,8 +57,13 @@ struct Peak {
 
 float getClosestTarget(float maxFreq);
 void McLeod_Method(vector <float> fftBuffer, float sampleRate);
+void printTuner(float freq, float target, float cents, const string& stringName);
+string getClosestName(float maxFreq);
 
-
+inline float median3(float a, float b, float c)
+{
+    return max(min(a, b), min(max(a, b), c));
+}
 
 
 
@@ -121,9 +150,10 @@ void McLeod_Method(vector <float> fftBuffer, float sampleRate)
         energy += fftBuffer[i] * fftBuffer[i];
     }
     energy = sqrt(energy / N);  // RMS
-    
+
     if (energy < 0.00005) {        // próg zależny od mikrofonu
         meanFreq = 0.0;
+        return;
         //printf("McLeod Method : %.1f\n", meanFreq);
 
     }
@@ -155,7 +185,7 @@ void McLeod_Method(vector <float> fftBuffer, float sampleRate)
                 nsdf[tau] > nsdf[tau - 1] &&
                 nsdf[tau] > nsdf[tau + 1]) 
             {
-                
+
                 float freq = sampleRate / tau;
                 candidates.push_back({ tau, freq, nsdf[tau] });
                 if (nsdf[tau] > peakValue) {
@@ -166,7 +196,7 @@ void McLeod_Method(vector <float> fftBuffer, float sampleRate)
             }
         }
         int size = candidates.size();
-       
+
         float LN = nsdf[peakIndex - 1];
         float RN = nsdf[peakIndex + 1];
         float offset = 0.5f * (LN - RN) / (LN - 2 * peakValue + RN);
@@ -175,24 +205,186 @@ void McLeod_Method(vector <float> fftBuffer, float sampleRate)
         // 4. Wyliczenie częstotliwości
         float interpolatedFreq = sampleRate / trueIndex;
 
-        meanFreq = (previousFreq + 2 * interpolatedFreq + secondFreq) / 4;
+        float rawFreq = interpolatedFreq;
+
+        meanFreq = median3(rawFreq, previousFreq, secondFreq);
+
         secondFreq = previousFreq;
-        previousFreq = interpolatedFreq;
+        previousFreq = rawFreq;
         if (meanFreq > 1000) 
         {
             meanFreq = 0;
         }
         else {
-            
+
             detectedString = getClosestTarget(meanFreq);
             centsDifference = 0.0f;
             if (meanFreq > 0.0f) {
                 centsDifference = 1200.0f * log(meanFreq / detectedString) / log(2.0f);
             }
         }
-        printf("McLeod Method : %.1f\n", meanFreq);
-        
+        float detectedString = getClosestTarget(meanFreq);
+        string detectedName = getClosestName(meanFreq);
+        float centsDifference = (meanFreq > 0.0f)
+            ? 1200.0f * log2f(meanFreq / detectedString)
+            : 0.0f;
+        printTuner(meanFreq, detectedString, centsDifference, detectedName);
 
     }
 
 }
+
+void printTuner(float freq, float target, float cents, const string& stringName)
+{
+    if (freq < 10.0f) return;  // nie rysuj dla 0
+
+    system("cls");
+
+    const int barWidth = 41;
+    const float maxCents = 50.0f;
+    int pos = (int)((cents / maxCents) * (barWidth / 2)) + barWidth / 2;
+    pos = max(0, min(barWidth - 1, pos));
+
+    string bar(barWidth, '-');
+    bar[barWidth / 2] = '|';
+    bar[pos] = '*';
+
+    printf("+------------------------------------------+\n");
+    printf("|           GUITAR TUNER                   |\n");
+    printf("+------------------------------------------+\n");
+    printf("|  Struna: %-6s     Freq: %6.1f Hz       |\n", stringName.c_str(), freq);
+    printf("|  Target: %-6s     Freq: %6.2f Hz       |\n", stringName.c_str(), target);
+    printf("|                                          |\n");
+    printf("|  [%s]  |\n", bar.c_str());
+    printf("|   -50        -10    0    +10        +50  |\n");
+    printf("|                                          |\n");
+
+    if (abs(cents) < 5.0f)
+        printf("|          *** NASTROJONO! ***             |\n");
+    else if (cents > 0)
+        printf("|     %+6.1f centow  ->  poluzuj strune      |\n", cents);
+    else
+        printf("|     %+6.1f centow  ->  naciagnij strune  |\n", cents);
+
+    printf("+------------------------------------------+\n");
+}
+
+string getClosestName(float maxFreq)
+{
+    vector<GuitarString> guitarStrings = {
+        {"E4", 329.63}, {"B3", 246.94}, {"G3", 196.00},
+        {"D3", 146.83}, {"A2", 110.00}, {"E2", 82.41}
+    };
+
+    string closestName = guitarStrings[0].name;
+    float minDiff = abs(maxFreq - (float)guitarStrings[0].frequency);
+
+    for (const auto& gs : guitarStrings) {
+        float diff = abs(maxFreq - (float)gs.frequency);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestName = gs.name;
+        }
+    }
+    return closestName;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int main() {
+
+    PaError err = Pa_Initialize();
+    if (err != paNoError) {
+        std::cerr << "Init error: " << Pa_GetErrorText(err) << std::endl;
+        return 1;
+    }
+
+    int numDev = Pa_GetDeviceCount();
+    std::cout << "=== PortAudio devices ===\n";
+    for (int i = 0; i < numDev; ++i)
+        std::cout << i << ": " << Pa_GetDeviceInfo(i)->name << "\n";
+    std::cout << "=========================\n";
+
+    PaStreamParameters inParams{}, outParams{};
+    int inDev = Pa_GetDefaultInputDevice();
+    int outDev = Pa_GetDefaultOutputDevice();
+    for (int i = 0; i < numDev; ++i) {
+        std::string n(Pa_GetDeviceInfo(i)->name);
+        if (n.find("USB Audio") != std::string::npos)  inDev = i;
+        if (n.find("Headphones") != std::string::npos) outDev = i;
+    }
+    std::cout << "Wejście = " << inDev << ", Wyjście = " << outDev << "\n";
+
+    inParams.device = inDev;
+    inParams.channelCount = 1;
+    inParams.sampleFormat = paFloat32;
+    inParams.suggestedLatency = Pa_GetDeviceInfo(inDev)->defaultLowInputLatency;
+    inParams.hostApiSpecificStreamInfo = nullptr;
+
+    outParams.device = outDev;
+    outParams.channelCount = 2;
+    outParams.sampleFormat = paFloat32;
+    outParams.suggestedLatency = Pa_GetDeviceInfo(outDev)->defaultLowOutputLatency;
+    outParams.hostApiSpecificStreamInfo = nullptr;
+
+    PaStream* stream;
+    err = Pa_OpenStream(&stream, &inParams, nullptr,
+        sampleRate, 512,
+        paClipOff, audioCallback, nullptr);
+    if (err != paNoError) {
+        std::cerr << "OpenStream error: " << Pa_GetErrorText(err) << std::endl;
+        return 1;
+    }
+
+    err = Pa_StartStream(stream);
+    if (err != paNoError) {
+        std::cerr << "StartStream error: " << Pa_GetErrorText(err) << std::endl;
+        return 1;
+    }
+
+    std::cout << "Strumień uruchomiony, Ctrl+C aby zakończyć\n";
+
+
+    while (Pa_IsStreamActive(stream) == 1) {
+        Pa_Sleep(100);
+    }
+
+    Pa_StopStream(stream);
+    Pa_CloseStream(stream);
+    Pa_Terminate();
+    return 0;
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
